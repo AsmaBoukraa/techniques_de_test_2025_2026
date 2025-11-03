@@ -7,9 +7,9 @@ Le sujet du TP se trouve [ici](./TP/SUJET.md)
 
 Vous devez compléter cette partie pour qu'on puisse vous identifier.  
 
-Nom : XXXXX  
-Prénom : XXXXX  
-Groupe de TP : XXXXX (e.g. M1 ILSEN classique)  
+Nom : BOUKRAA
+Prénom : Asma Nihal 
+Groupe de TP : M1 IA 
 
 ## Remarques particulières
 
