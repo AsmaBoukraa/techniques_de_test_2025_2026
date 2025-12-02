@@ -1,135 +1,189 @@
-# TODO
 # PLAN — Triangulator (TP Techniques de Test 2025/2026)
 
-##  Objectif du TP
-Le but de ce TP est de réfléchir et de mettre en place un ensemble de tests pour vérifier que le microservice **Triangulator** fonctionne correctement.  
-Ce service doit calculer la **triangulation** d’un ensemble de points 2D à partir de données binaires récupérées depuis un autre composant appelé **PointSetManager**.  
+---
 
-L’idée est donc de tester la fiabilité, la justesse et la performance du service avant même d’écrire tout le code.  
-Ce document sert donc de plan de tests, c’est-à-dire une sorte de feuille de route pour savoir **quoi tester, pourquoi et comment**.
+## Objectif du TP
+
+Le but de ce TP est de mettre en place une **démarche de tests** permettant de valider le bon fonctionnement du micro-service **Triangulator**.
+
+Ce service a pour rôle de calculer une **triangulation** d’un ensemble de points en 2D, reçus depuis un autre composant appelé **PointSetManager**, sous forme de **données binaires**.
+
+L’objectif principal n’est pas de coder rapidement l’algorithme, mais de **définir et construire des tests pertinents avant toute implémentation** selon une démarche **Test First / TDD**.
+
+Ce plan de tests décrit donc :
+
+- ce qui doit être testé,
+- pourquoi ces tests sont nécessaires,
+- comment ils seront organisés.
 
 ---
 
-##  1. Les principales parties à tester
+## 1. Parties principales à tester
 
-Le projet est composé de plusieurs fichiers Python.  
-Pour chaque partie, j’ai essayé d’imaginer quels tests seraient utiles et pourquoi.
-
----
-
-### A. Conversion binaire (fichier `binary.py`)
-
-Ces fonctions servent à convertir les ensembles de points et de triangles en **format binaire**, car c’est ainsi que les composants communiquent entre eux.
-
-**Pourquoi les tester ?**  
-Parce qu’une petite erreur dans la conversion pourrait casser tous les échanges entre services.
-
-**Ce que je veux vérifier :**
-- que l’encodage et le décodage fonctionnent bien dans les deux sens (encode → decode → même résultat),
-- que les erreurs sont bien détectées (par exemple un buffer trop court, des coordonnées invalides…),
-- que les indices des triangles sont valides.
-
-**Exemples de cas de test :**
-| Méthode | Ce que je teste | Cas envisagés |
-|----------|----------------|---------------|
-| `encode_pointset()` | Encodage correct | 0 point, plusieurs points, doublons, NaN/Inf |
-| `decode_pointset()` | Décodage correct | buffer tronqué, nombre de points invalide |
-| `encode_triangles()` | Indices valides | indice hors bornes → erreur |
-| `decode_triangles()` | Reconstruction complète | buffer incomplet → erreur |
+Le projet est divisé en plusieurs modules.  
+Pour chacun, des tests spécifiques sont prévus afin de couvrir tous les aspects du fonctionnement du service.
 
 ---
 
-### B. Calcul de la triangulation (fichier `algo.py`)
+## A. Tests du format binaire — `binary.py`
 
-C’est le cœur du service : il calcule les triangles à partir des points.
+Les fonctions de ce fichier assurent la conversion entre :
 
-**Pourquoi les tester ?**  
-Pour s’assurer que le calcul est juste, même dans des cas limites.
+- une représentation Python des points/triangles,
+- et leur **format binaire compact**, utilisé lors des échanges réseau.
 
-**Cas à tester :**
-| Cas | Résultat attendu |
-|------|------------------|
-| Moins de 3 points | Aucun triangle |
+### Pourquoi les tester ?
+
+Une erreur à ce niveau aurait un impact sur **toute la chaîne de traitement** :  
+données incorrectes → triangulation fausse → réponse erronée au client.
+
+### Points contrôlés
+
+- Bon fonctionnement de l’**encodeur / décodeur en aller-retour**
+- Détection des **buffers incomplets ou corrompus**
+- Rejet des données invalides
+- Validation des indices de sommets de triangles
+
+### Exemples de cas testés
+
+| Méthode | Objectif |
+|---------|----------|
+| `encode_pointset()` | Cas normal, 0 point, nombreux points, doublons, valeurs NaN / Inf |
+| `decode_pointset()` | Taille incohérente, buffer tronqué |
+| `encode_triangles()` | Indices hors bornes ou négatifs |
+| `decode_triangles()` | Reconstruction des sommets / triangles |
+
+---
+
+---
+
+## B. Tests de l’algorithme — `algo.py`
+
+Ce module effectue le calcul de la triangulation.
+
+### Pourquoi les tester ?
+
+C’est la partie **fonctionnelle principale** du service :  
+Les résultats doivent être corrects quelle que soit la configuration des points.
+
+### Cas étudiés
+
+| Situation | Résultat attendu |
+|-------------|------------------|
+| Moins de 3 points | 0 triangle |
 | 3 points non colinéaires | 1 triangle |
 | Points colinéaires | 0 triangle |
-| Polygone convexe (5 points) | n-2 triangles |
-| Points très proches | Pas de triangle "dégénéré" |
+| Polygone convexe (≥5 points) | n-2 triangles |
+| Coordonnées négatives | Fonctionnement normal |
+| Points dupliqués | Pas d’erreur système |
+| Triangles très petits | Stabilité numérique |
 
-Ces tests permettent de vérifier la justesse de l’algorithme sans forcément avoir encore toute l’implémentation.
-
----
-
-### C. Communication réseau (fichier `client.py`)
-
-Cette partie sert à récupérer les points auprès du **PointSetManager** via une requête HTTP.
-
-**Pourquoi les tester ?**  
-Parce que si le service amont ne répond pas correctement, il faut que notre programme sache gérer les erreurs sans planter.
-
-**Cas envisagés :**
-| Cas | Résultat attendu |
-|------|------------------|
-| ID valide | Retourne le PointSet en binaire |
-| ID inexistant | Erreur propre (exception ou 404) |
-| Service indisponible / timeout | Erreur gérée (pas de crash) |
+Ces tests permettent de **décrire les comportements cibles de l’algorithme** indépendamment de son implémentation actuelle.
 
 ---
 
-### D. Routes de l’API Flask (fichier `app.py`)
+---
 
-C’est l’API que les clients externes vont utiliser.  
-Elle doit répondre correctement aux requêtes et renvoyer les bons codes HTTP.
+## C. Tests du client HTTP — `client.py`
 
-**Tests envisagés :**
-| Endpoint | Ce que je veux vérifier | Résultat attendu |
-|-----------|--------------------------|------------------|
-| `/healthz` | Vérifie que le service est disponible | 200 + "ok" |
-| `/triangulate/<id>` | Test complet de la triangulation | 200 si ok, 422 si données invalides, 502 si erreur serveur |
-| Mauvaise méthode HTTP | Ex: POST au lieu de GET | 405 |
+Cette couche réalise la communication avec le `PointSetManager`.
+
+### Objectifs
+
+- Tester la récupération correcte des données
+- Simuler des erreurs réseau
+- Vérifier que les erreurs sont **correctement remontées**
+
+### Cas couverts
+
+| Cas | Comportement attendu |
+|-------|----------------------|
+| ID valide | Retour binaire correct |
+| ID introuvable | Erreur propagée proprement |
+| Service indisponible | Exception maîtrisée |
+| Timeout | Pas de crash système |
+
+Ces tests utilisent le **mocking** pour simuler les réponses externes.
 
 ---
 
-### E. Tests de performance
+---
 
-Ces tests seront faits à part, car ils peuvent être longs.  
-Le but est de mesurer si le service reste rapide quand on augmente le nombre de points.
+## D. Tests de l’API Flask — `app.py`
 
-| Fonction | Données | Temps visé |
-|-----------|----------|------------|
-| `encode_pointset()` / `decode_pointset()` | 10 000 points | < 1 seconde |
-| `triangulate_fan()` | 4 000 points | < 2 secondes |
+Ces tests vérifient le comportement du service du point de vue d’un client HTTP.
+
+### Endpoints contrôlés
+
+| Route | Vérification | Code attendu |
+|-------|----------------|---------------|
+| `/healthz` | Disponibilité du service | 200 + `"ok"` |
+| `/triangulate/<id>` | Chaîne complète (fetch + decode + algo + encode) | 200 |
+| Données invalides | Gestion propre | 422 |
+| Erreur service amont | Robustesse | 502 |
+| Méthode différente de GET | Conformité REST | 405 |
+| Données corrompues | Sécurité | 422 ou 500 |
 
 ---
 
-### F. Qualité et couverture
+---
 
-Pour finir, il faut vérifier que le code est bien écrit et bien couvert par les tests.
+## E. Tests de performance
 
-| Outil | Objectif |
-|--------|-----------|
-| **pytest** | Exécuter tous les tests |
-| **coverage** | Vérifier le taux de couverture (objectif : ~85%) |
-| **ruff** | Vérifier la qualité du code (aucune erreur) |
-| **pdoc3** | Générer la documentation automatique |
+Ces tests sont séparés du reste (`pytest.mark.perf`) car les calculs peuvent être longs.
+
+### Objectifs
+
+- Vérifier que :
+  - la conversion binaire est rapide même avec de grandes quantités de points,
+  - l’algorithme reste performant pour des jeux de données réalistes.
+
+### Scénarios envisagés
+
+| Fonction | Charge test | Seuil |
+|-----------|--------------|-------|
+| `encode_pointset()` / `decode_pointset()` | 10 000 points | < 1 s |
+| `triangulate_fan()` | 4 000 points | < 2 s |
+| Chaîne complète | 500 points | < 3 s |
 
 ---
 
-##  2. Résumé des cas de test prévus
+---
 
-| Cas | Fichier concerné | Objectif | Résultat attendu |
-|------|------------------|-----------|------------------|
-| 0 point | binary.py / algo.py | Cas limite | Aucun triangle |
-| 3 points | algo.py | Cas minimal | 1 triangle |
-| Points colinéaires | algo.py | Cas dégénéré | 0 triangle |
-| Buffer tronqué | binary.py | Détection d’erreur | Exception |
-| Valeurs NaN / Inf | binary.py | Données invalides | Exception |
-| API `/healthz` | app.py | Vérifier disponibilité | 200 + "ok" |
-| API `/triangulate/<id>` | app.py | Vérifier comportement complet | 200 / 422 / 502 |
-| Mauvaise méthode HTTP | app.py | Vérifier REST | 405 |
+## F. Qualité de code et couverture
+
+Outre la validité fonctionnelle, le code doit respecter des standards de qualité.
+
+| Outil | Rôle |
+|--------|------|
+| **pytest** | Exécution de tous les tests |
+| **coverage** | Mesure de la couverture (>80% visé) |
+| **ruff** | Respect des règles de style |
+| **pdoc3** | Génération de la documentation |
 
 ---
 
-##  3. Organisation prévue du projet
+---
+
+## 2. Synthèse des tests
+
+| Cas | Module | Objectif |
+|------|--------|-----------|
+| 0 point | `binary.py`, `algo.py` | Cas limite |
+| 3 points | `algo.py` | Cas minimal |
+| Colinéarité | `algo.py` | Cas dégénéré |
+| Buffer tronqué | `binary.py` | Validation données |
+| NaN / Inf | `binary.py` | Rejet entrées invalides |
+| `/healthz` | `app.py` | Disponibilité |
+| `/triangulate/<id>` | `app.py` | Workflow complet |
+| ID invalide / méthode incorrecte | `app.py` | Robustesse API |
+| Gros volumes | `binary.py`, `algo.py` | Performance |
+
+---
+
+---
+
+## 3. Organisation du projet
 
 ```text
 triangulator-tp/
