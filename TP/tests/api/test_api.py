@@ -1,8 +1,8 @@
 """Tests de l'API Flask du Triangulator."""
 from unittest.mock import patch, MagicMock
 import pytest
-from triangulator.app import app
-from triangulator import binary
+from TP.src.triangulator.app import app
+from TP.src.triangulator import binary
 
 
 def _client():

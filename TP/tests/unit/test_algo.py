@@ -1,5 +1,5 @@
 """Tests unitaires pour l'algorithme de triangulation."""
-from triangulator import algo
+from src.triangulator import algo
 
 
 def test_less_than_three_points():

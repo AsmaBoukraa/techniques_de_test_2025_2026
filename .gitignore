@@ -1,0 +1,40 @@
+# Environnements virtuels
+.venv/
+venv/
+
+# Cache Python
+__pycache__/
+*.pyc
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Ruff
+.ruff_cache/
+
+# Documentation générée
+docs/
+
+# Fichiers système Windows
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+
+# Build temporaires
+build/
+dist/
+*.egg-info/

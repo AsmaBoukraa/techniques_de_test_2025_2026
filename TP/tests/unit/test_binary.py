@@ -1,6 +1,6 @@
 import pytest
 import math
-from triangulator import binary
+from TP.src.triangulator import binary
 
 
 def test_pointset_roundtrip_minimal():

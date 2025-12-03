@@ -1,6 +1,6 @@
 import time
 import pytest
-from triangulator import algo, binary
+from TP.src.triangulator import algo, binary
 
 pytestmark = pytest.mark.perf
 
