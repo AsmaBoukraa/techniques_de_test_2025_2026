@@ -208,7 +208,7 @@ def test_triangulate_invalid_id_negative():
 
 
 def test_triangulate_invalid_id_zero():
-    """ID=0 pourrait être invalide selon ton design."""
+    """ID=0 pourrait être invalide selon design."""
     c = _client()
     r = c.get("/triangulate/0")
     assert r.status_code in (502, 404)
