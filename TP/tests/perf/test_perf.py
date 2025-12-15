@@ -1,21 +1,26 @@
+"""Tests de performance du service Triangulator."""
 import time
+
 import pytest
-from TP.src.triangulator import algo, binary
+from triangulator import algo, binary
 
 pytestmark = pytest.mark.perf
 
 
 def test_triangulation_100_points():
+    """Vérifie la performance de l'algorithme sur 100 points."""
     pts = [(float(i), float(i**0.5)) for i in range(100)]
     start = time.perf_counter()
 
-    tris = algo.triangulate_fan(pts)
+    # tris = algo.delaunay_triangulation(pts) <-- F841 corrigé
+    algo.delaunay_triangulation(pts)
 
     duration = time.perf_counter() - start
     assert duration < 1.0
 
 
 def test_encode_pointset_10000_points():
+    """Vérifie la performance de l'encodage binaire sur 10 000 points."""
     pts = [(float(i), -float(i)) for i in range(10000)]
     start = time.perf_counter()
 
@@ -27,13 +32,14 @@ def test_encode_pointset_10000_points():
 
 
 def test_full_pipeline_perf():
+    """Vérifie la performance du pipeline complet (Encode -> Algo -> Decode)."""
     pts = [(float(i % 50), float(i // 50)) for i in range(500)]
 
     start = time.perf_counter()
 
     raw = binary.encode_pointset(pts)
     decoded = binary.decode_pointset(raw)
-    tris = algo.triangulate_fan(decoded)
+    tris = algo.delaunay_triangulation(decoded)
     raw2 = binary.encode_triangles(decoded, tris)
 
     duration = time.perf_counter() - start

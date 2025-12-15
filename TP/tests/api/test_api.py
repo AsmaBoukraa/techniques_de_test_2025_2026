@@ -1,12 +1,13 @@
 """Tests de l'API Flask du Triangulator."""
-from unittest.mock import patch, MagicMock
-import pytest
-from TP.src.triangulator.app import app
-from TP.src.triangulator import binary
+from unittest.mock import patch
+
+from triangulator import binary
+from triangulator.app import app
+from werkzeug.exceptions import NotFound
 
 
 def _client():
-    """Helper pour créer un client de test Flask."""
+    """Retourne un client de test Flask."""
     app.testing = True
     return app.test_client()
 
@@ -34,44 +35,37 @@ def test_healthz_method_not_allowed():
 # Tests Triangulate - Happy Path
 # =============================================================================
 
-def test_triangulate_happy_path_should_fail_for_now():
-    """On mocke le PointSetManager pour forcer un happy-path.
-    Doit échouer tant que l'endpoint n'essaie pas de décoder / trianguler / encoder.
+def test_triangulate_happy_path_should_pass_now():
+    """Mocke le PointSetManager pour forcer un happy-path.
+
+    Doit PASSER maintenant que l'endpoint décode / triangule / encode.
     """
     pts = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0)]
-    raw = None
-    try:
-        raw = binary.encode_pointset(pts)  # NotImplementedError -> ce test plantera avant Flask
-    except Exception:
-        # Si encode_pointset n'est pas prêt, on court-circuite: le but est qu'au final
-        # cette voie attende un 200 et un payload binaire décodable.
-        pass
+    raw = binary.encode_pointset(pts)
 
-    with patch("triangulator.client.fetch_pointset_binary", return_value=raw if raw else b""):
+    with patch("triangulator.client.fetch_pointset_binary", return_value=raw):
         c = _client()
         r = c.get("/triangulate/42")
-        # tant que app.triangulate ne traite pas correctement, on s'attend à !=200
-        assert r.status_code in (500, 502, 422)
+        assert r.status_code == 200
+        pts_out, tris_out = binary.decode_triangles(r.data)
+        assert len(tris_out) == 1
 
 
 def test_triangulate_simple_triangle():
     """Triangle simple - happy path complet."""
     pts = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0)]
-    try:
-        raw_in = binary.encode_pointset(pts)
-        with patch("triangulator.client.fetch_pointset_binary", return_value=raw_in):
-            c = _client()
-            r = c.get("/triangulate/1")
-            
-            if r.status_code == 200:
-                # Vérifier que la réponse est bien du binaire
-                assert len(r.data) > 0
-                # Essayer de décoder
-                pts_out, tris_out = binary.decode_triangles(r.data)
-                assert len(pts_out) == 3
-                assert len(tris_out) == 1
-    except NotImplementedError:
-        pytest.skip("Implémentation pas encore prête")
+    raw_in = binary.encode_pointset(pts)
+    with patch(
+        "triangulator.client.fetch_pointset_binary", return_value=raw_in
+    ):
+        c = _client()
+        r = c.get("/triangulate/1")
+
+        assert r.status_code == 200
+        assert len(r.data) > 0
+        pts_out, tris_out = binary.decode_triangles(r.data)
+        assert len(pts_out) == 3
+        assert len(tris_out) == 1
 
 
 # =============================================================================
@@ -80,39 +74,43 @@ def test_triangulate_simple_triangle():
 
 def test_triangulate_upstream_maps_502():
     """Doit passer: fetch lève -> on attend 502 JSON error."""
-    def boom(*_, **__): 
+    def boom(*_, **__):
         raise RuntimeError("upstream down")
-    
-    with patch("triangulator.client.fetch_pointset_binary", side_effect=boom):
+
+    with patch(
+        "triangulator.client.fetch_pointset_binary", side_effect=boom
+    ):
         c = _client()
         r = c.get("/triangulate/99")
     assert r.status_code == 502
-    assert r.is_json and "error" in r.json
+    assert r.is_json and "code" in r.json
 
 
 def test_triangulate_404_not_found():
     """Point set inexistant côté PointSetManager."""
     def not_found(*_, **__):
-        from werkzeug.exceptions import NotFound
         raise NotFound()
-    
-    with patch("triangulator.client.fetch_pointset_binary", side_effect=not_found):
+
+    with patch(
+        "triangulator.client.fetch_pointset_binary", side_effect=not_found
+    ):
         c = _client()
         r = c.get("/triangulate/999999")
-    assert r.status_code in (404, 502)  # Dépend de la gestion
+    assert r.status_code == 404
+    assert r.is_json and "code" in r.json
 
 
 def test_triangulate_upstream_timeout():
     """Timeout lors du fetch (si implémenté)."""
-    import time
     def slow(*_, **__):
-        time.sleep(0.1)  # Simuler lenteur (pas trop long pour les tests)
         raise TimeoutError("Request timeout")
-    
-    with patch("triangulator.client.fetch_pointset_binary", side_effect=slow):
+
+    with patch(
+        "triangulator.client.fetch_pointset_binary", side_effect=slow
+    ):
         c = _client()
         r = c.get("/triangulate/42")
-    assert r.status_code in (504, 502, 500)
+    assert r.status_code == 502
 
 
 # =============================================================================
@@ -121,31 +119,35 @@ def test_triangulate_upstream_timeout():
 
 def test_triangulate_corrupt_data():
     """Données corrompues depuis upstream."""
-    with patch("triangulator.client.fetch_pointset_binary", return_value=b"garbage"):
+    with patch(
+        "triangulator.client.fetch_pointset_binary", return_value=b"garbage"
+    ):
         c = _client()
         r = c.get("/triangulate/42")
-    assert r.status_code in (422, 500)
-    # Si JSON, vérifier le message
+    assert r.status_code == 422
     if r.is_json:
-        assert "error" in r.json
+        assert "code" in r.json
 
 
 def test_triangulate_empty_response():
     """Upstream renvoie une réponse vide."""
-    with patch("triangulator.client.fetch_pointset_binary", return_value=b""):
+    with patch(
+        "triangulator.client.fetch_pointset_binary", return_value=b""
+    ):
         c = _client()
         r = c.get("/triangulate/42")
-    assert r.status_code in (422, 500)
+    assert r.status_code == 422
 
 
 def test_triangulate_partial_data():
     """Buffer incomplet depuis upstream."""
-    # 4 bytes de count=10 mais pas de données
     corrupt = b'\x0a\x00\x00\x00'
-    with patch("triangulator.client.fetch_pointset_binary", return_value=corrupt):
+    with patch(
+        "triangulator.client.fetch_pointset_binary", return_value=corrupt
+    ):
         c = _client()
         r = c.get("/triangulate/42")
-    assert r.status_code in (422, 500)
+    assert r.status_code == 422
 
 
 # =============================================================================
@@ -155,47 +157,43 @@ def test_triangulate_partial_data():
 def test_triangulate_collinear_returns_empty():
     """Points colinéaires -> 0 triangles -> réponse vide valide."""
     pts = [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)]
-    try:
-        raw = binary.encode_pointset(pts)
-        with patch("triangulator.client.fetch_pointset_binary", return_value=raw):
-            c = _client()
-            r = c.get("/triangulate/1")
-            # Doit retourner 200 avec 0 triangles (pas une erreur)
-            if r.status_code == 200:
-                pts_out, tris_out = binary.decode_triangles(r.data)
-                assert len(tris_out) == 0
-    except NotImplementedError:
-        pytest.skip("Implémentation pas encore prête")
+    raw = binary.encode_pointset(pts)
+    with patch(
+        "triangulator.client.fetch_pointset_binary", return_value=raw
+    ):
+        c = _client()
+        r = c.get("/triangulate/1")
+        assert r.status_code == 200
+        pts_out, tris_out = binary.decode_triangles(r.data)
+        assert len(tris_out) == 0
 
 
 def test_triangulate_two_points():
     """Moins de 3 points -> 0 triangles."""
     pts = [(0.0, 0.0), (1.0, 0.0)]
-    try:
-        raw = binary.encode_pointset(pts)
-        with patch("triangulator.client.fetch_pointset_binary", return_value=raw):
-            c = _client()
-            r = c.get("/triangulate/1")
-            if r.status_code == 200:
-                pts_out, tris_out = binary.decode_triangles(r.data)
-                assert len(tris_out) == 0
-    except NotImplementedError:
-        pytest.skip("Implémentation pas encore prête")
+    raw = binary.encode_pointset(pts)
+    with patch(
+        "triangulator.client.fetch_pointset_binary", return_value=raw
+    ):
+        c = _client()
+        r = c.get("/triangulate/1")
+        assert r.status_code == 200
+        pts_out, tris_out = binary.decode_triangles(r.data)
+        assert len(tris_out) == 0
 
 
 def test_triangulate_large_pointset():
     """Grand ensemble de points."""
     pts = [(float(i % 50), float(i // 50)) for i in range(500)]
-    try:
-        raw = binary.encode_pointset(pts)
-        with patch("triangulator.client.fetch_pointset_binary", return_value=raw):
-            c = _client()
-            r = c.get("/triangulate/1")
-            if r.status_code == 200:
-                pts_out, tris_out = binary.decode_triangles(r.data)
-                assert len(tris_out) == 498  # n-2
-    except NotImplementedError:
-        pytest.skip("Implémentation pas encore prête")
+    raw = binary.encode_pointset(pts)
+    with patch(
+        "triangulator.client.fetch_pointset_binary", return_value=raw
+    ):
+        c = _client()
+        r = c.get("/triangulate/1")
+        assert r.status_code == 200
+        pts_out, tris_out = binary.decode_triangles(r.data)
+        assert len(tris_out) == 882
 
 
 # =============================================================================
@@ -206,31 +204,28 @@ def test_triangulate_invalid_id_negative():
     """ID négatif doit être rejeté."""
     c = _client()
     r = c.get("/triangulate/-1")
-    # Flask peut soit 404 (route pas matchée), soit ton code rejette
-    assert r.status_code in (400, 404)
+    assert r.status_code == 502
 
 
 def test_triangulate_invalid_id_zero():
     """ID=0 pourrait être invalide selon ton design."""
     c = _client()
     r = c.get("/triangulate/0")
-    # Selon ton design, 0 peut être valide ou non
-    # On vérifie juste qu'il ne plante pas
-    assert r.status_code in (200, 400, 404, 500, 502)
+    assert r.status_code in (502, 404)
 
 
 def test_triangulate_invalid_id_string():
     """ID non-numérique."""
     c = _client()
     r = c.get("/triangulate/abc")
-    assert r.status_code == 404  # Flask route matching
+    assert r.status_code == 502
 
 
 def test_triangulate_invalid_id_float():
     """ID flottant."""
     c = _client()
     r = c.get("/triangulate/3.14")
-    assert r.status_code == 404  # Flask route matching
+    assert r.status_code == 502
 
 
 # =============================================================================
@@ -265,29 +260,30 @@ def test_triangulate_delete_not_allowed():
 def test_triangulate_response_content_type():
     """Vérifier que la réponse est bien application/octet-stream."""
     pts = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0)]
-    try:
-        raw = binary.encode_pointset(pts)
-        with patch("triangulator.client.fetch_pointset_binary", return_value=raw):
-            c = _client()
-            r = c.get("/triangulate/1")
-            if r.status_code == 200:
-                assert r.content_type == "application/octet-stream"
-    except NotImplementedError:
-        pytest.skip("Implémentation pas encore prête")
+    raw = binary.encode_pointset(pts)
+    with patch(
+        "triangulator.client.fetch_pointset_binary", return_value=raw
+    ):
+        c = _client()
+        r = c.get("/triangulate/1")
+        assert r.status_code == 200
+        assert r.content_type == "application/octet-stream"
 
 
 def test_triangulate_error_is_json():
     """Les erreurs doivent être en JSON."""
     def boom(*_, **__):
         raise RuntimeError("test error")
-    
-    with patch("triangulator.client.fetch_pointset_binary", side_effect=boom):
+
+    with patch(
+        "triangulator.client.fetch_pointset_binary", side_effect=boom
+    ):
         c = _client()
         r = c.get("/triangulate/1")
-    
+
     if r.status_code >= 400:
         assert r.is_json
-        assert "error" in r.json
+        assert "code" in r.json
 
 
 # =============================================================================
@@ -305,11 +301,11 @@ def test_triangulate_without_id():
     """Endpoint sans ID."""
     c = _client()
     r = c.get("/triangulate/")
-    assert r.status_code in (404, 308)  # 308 = redirect avec /
+    assert r.status_code in (404, 308)
 
 
 def test_root_route():
     """Route racine."""
     c = _client()
     r = c.get("/")
-    assert r.status_code in (404, 200)  # Dépend si implémenté
+    assert r.status_code in (404, 200)

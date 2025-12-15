@@ -1,6 +1,8 @@
-import pytest
+"""Tests unitaires pour les fonctions d'encodage/décodage binaire."""
 import math
-from TP.src.triangulator import binary
+import pytest
+from triangulator import binary
+from triangulator.binary import BinaryCodecError
 
 
 def test_pointset_roundtrip_minimal():
@@ -46,8 +48,8 @@ def test_pointset_reject_nan_inf_on_encode():
 
 def test_pointset_decode_wrong_size():
     """Taille incohérente."""
-    buf = b"\x02\x00\x00\x00" + b"\x00" * 8  # 2 points annoncés mais 1 fourni
-    with pytest.raises(Exception):
+    buf = b"\x02\x00\x00\x00" + b"\x00" * 8  # 2 pts annoncés, 1 fourni
+    with pytest.raises(BinaryCodecError):
         binary.decode_pointset(buf)
 
 
@@ -88,5 +90,5 @@ def test_triangles_negative_index():
 def test_triangles_wrong_tuple_size():
     """Triangle invalide (≠3 indices)."""
     pts = [(0, 0), (1, 0), (0, 1)]
-    with pytest.raises(Exception):
+    with pytest.raises(BinaryCodecError):
         binary.encode_triangles(pts, [(0, 1)])
