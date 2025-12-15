@@ -1,5 +1,6 @@
 """Tests unitaires pour les fonctions d'encodage/décodage binaire."""
 import math
+
 import pytest
 from triangulator import binary
 from triangulator.binary import BinaryCodecError
